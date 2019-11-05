@@ -538,8 +538,7 @@ static void set_trace_id()
             if (trace_id_zval && zval_get_type(trace_id_zval) == IS_STRING) {
                 request_trace_id = trace_id_zval->value.str;
             } else {
-                request_trace_id = request_span_id = get_uniqid();
-                parent_span_id_zval = NULL;
+                request_trace_id = request_span_id = parent_span_id_zval = NULL;
                 goto set_trace_id_end;
             }
         }
@@ -552,9 +551,6 @@ static void set_trace_id()
             //当前是第一个请求，不需要做什么
             parent_span_id_zval = NULL;
         }
-    }
-    if (request_span_id == NULL) {
-        request_span_id = get_uniqid();
     }
 
 set_trace_id_end:
@@ -569,16 +565,15 @@ void inject_trace_id_before_exec(php_curl *ch)
 		slist = (struct curl_slist *) zend_hash_index_find_ptr(ch->to_free->slist, CURLOPT_HTTPHEADER);
 		zend_string * trace_id_str, * span_id_str, *parent_span_id_str;
 		trace_id_str = strpprintf(0, "x-b3-traceid: %s", ZSTR_VAL(request_trace_id));
-		span_id_str = strpprintf(0, "x-b3-spanid: %s", ZSTR_VAL(request_span_id));
+		//span_id_str = strpprintf(0, "x-b3-spanid: %s", ZSTR_VAL(request_span_id));
 		slist = curl_slist_append(slist, ZSTR_VAL(trace_id_str));
-		slist = curl_slist_append(slist, ZSTR_VAL(span_id_str));
+		//slist = curl_slist_append(slist, ZSTR_VAL(span_id_str));
 		if (request_parent_span_id != NULL) {
 		    parent_span_id_str = strpprintf(0, "x-b3-parentspanid: %s", ZSTR_VAL(request_parent_span_id));
 		    slist = curl_slist_append(slist, ZSTR_VAL(parent_span_id_str));
 		}
 		efree(trace_id_str);
 		efree(span_id_str);
-		//todo 是否释放内存正确，还需要再检查
 		curl_easy_setopt(ch->cp, CURLOPT_HTTPHEADER, slist);
 	}
 }
