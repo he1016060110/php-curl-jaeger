@@ -569,7 +569,7 @@ void inject_trace_id_before_exec(php_curl *ch)
 		slist = curl_slist_append(slist, ZSTR_VAL(trace_id_str));
 		//slist = curl_slist_append(slist, ZSTR_VAL(span_id_str));
 		if (request_parent_span_id != NULL) {
-		    parent_span_id_str = strpprintf(0, "X-B3-Parentspanid: %s", ZSTR_VAL(request_parent_span_id));
+		    parent_span_id_str = strpprintf(0, "X-B3-Spanid: %s", ZSTR_VAL(request_parent_span_id));
 		    slist = curl_slist_append(slist, ZSTR_VAL(parent_span_id_str));
 		}
 		efree(trace_id_str);
