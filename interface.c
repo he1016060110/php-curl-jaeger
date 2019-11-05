@@ -564,12 +564,12 @@ void inject_trace_id_before_exec(php_curl *ch)
 		struct curl_slist *slist = NULL;
 		slist = (struct curl_slist *) zend_hash_index_find_ptr(ch->to_free->slist, CURLOPT_HTTPHEADER);
 		zend_string * trace_id_str, * span_id_str, *parent_span_id_str;
-		trace_id_str = strpprintf(0, "x-b3-traceid: %s", ZSTR_VAL(request_trace_id));
+		trace_id_str = strpprintf(0, "X-B3-Traceid: %s", ZSTR_VAL(request_trace_id));
 		//span_id_str = strpprintf(0, "x-b3-spanid: %s", ZSTR_VAL(request_span_id));
 		slist = curl_slist_append(slist, ZSTR_VAL(trace_id_str));
 		//slist = curl_slist_append(slist, ZSTR_VAL(span_id_str));
 		if (request_parent_span_id != NULL) {
-		    parent_span_id_str = strpprintf(0, "x-b3-parentspanid: %s", ZSTR_VAL(request_parent_span_id));
+		    parent_span_id_str = strpprintf(0, "X-B3-Parentspanid: %s", ZSTR_VAL(request_parent_span_id));
 		    slist = curl_slist_append(slist, ZSTR_VAL(parent_span_id_str));
 		}
 		efree(trace_id_str);
