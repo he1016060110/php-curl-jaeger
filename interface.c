@@ -565,6 +565,7 @@ set_trace_id_end:
 void inject_trace_id_before_exec(php_curl *ch)
 {
 	if (request_trace_id != NULL) {
+	    return;
 		struct curl_slist *slist = NULL;
 		slist = (struct curl_slist *) zend_hash_index_find_ptr(ch->to_free->slist, CURLOPT_HTTPHEADER);
 		zend_string * trace_id_str, * span_id_str, *parent_span_id_str;
