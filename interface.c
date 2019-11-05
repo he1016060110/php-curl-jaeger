@@ -501,6 +501,106 @@ const zend_function_entry curl_functions[] = {
 };
 /* }}} */
 
+/**
+x-b3-traceid: e6c4d0dcc726068f75383a54d9650e93
+x-b3-spanid: 3bf5e4406ecd716b
+x-b3-parentspanid: bc4fb0854ed8e332
+x-b3-sampled: 1
+ */
+static zend_string * request_trace_id = NULL;
+static zend_string * request_span_id = NULL;
+static zend_string * request_parent_span_id = NULL;
+
+//生成唯一id
+static zend_string * get_uniqid()
+{
+    zend_string *uniqid;
+    int sec, usec;
+    struct timeval tv;
+    (void)gettimeofday((struct timeval *) &tv, (struct timezone *) NULL);
+    sec = (int) tv.tv_sec;
+    usec = (int) (tv.tv_usec % 0x100000);
+    uniqid = strpprintf(0, "%08x%05x", sec, usec);
+    return uniqid;
+}
+
+static void set_trace_id()
+{
+    zval * server_zval, *trace_id_zval, *parent_span_id_zval;
+    zend_string * trace_id_key = NULL;
+    zend_string * parent_span_key = NULL;
+    trace_id_key = strpprintf(0, "%s", "HTTP_X_B3_TRACEID");
+    parent_span_key = strpprintf(0, "%s", "HTTP_X_B3_SPANID");
+    if (zval_get_type(&PG(http_globals)[TRACK_VARS_SERVER]) == IS_ARRAY) {
+        server_zval = &PG(http_globals)[TRACK_VARS_SERVER];
+        if (request_trace_id == NULL) {
+            trace_id_zval = zend_hash_find(server_zval->value.arr, trace_id_key);
+            if (trace_id_zval && zval_get_type(trace_id_zval) == IS_STRING) {
+                request_trace_id = trace_id_zval->value.str;
+            } else {
+                request_trace_id = request_span_id = get_uniqid();
+                parent_span_id_zval = NULL;
+                goto set_trace_id_end;
+            }
+        }
+        parent_span_id_zval = zend_hash_find(server_zval->value.arr, parent_span_key);
+        if (parent_span_id_zval && zval_get_type(parent_span_id_zval) == IS_STRING) {
+            if (request_parent_span_id == NULL) {
+                request_parent_span_id = parent_span_id_zval->value.str;
+            }
+        } else {
+            //当前是第一个请求，不需要做什么
+            parent_span_id_zval = NULL;
+        }
+    }
+    if (request_span_id == NULL) {
+        request_span_id = get_uniqid();
+    }
+
+set_trace_id_end:
+    efree(trace_id_key);
+    efree(parent_span_key);
+}
+
+void inject_trace_id_before_exec(php_curl *ch)
+{
+	if (request_trace_id != NULL) {
+		struct curl_slist *slist = NULL;
+		slist = (struct curl_slist *) zend_hash_index_find_ptr(ch->to_free->slist, CURLOPT_HTTPHEADER);
+		zend_string * trace_id_str, * span_id_str, *parent_span_id_str;
+		trace_id_str = strpprintf(0, "x-b3-traceid: %s", ZSTR_VAL(request_trace_id));
+		span_id_str = strpprintf(0, "x-b3-spanid: %s", ZSTR_VAL(request_span_id));
+		slist = curl_slist_append(slist, ZSTR_VAL(trace_id_str));
+		slist = curl_slist_append(slist, ZSTR_VAL(span_id_str));
+		if (request_parent_span_id != NULL) {
+		    parent_span_id_str = strpprintf(0, "x-b3-parentspanid: %s", ZSTR_VAL(request_parent_span_id));
+		    slist = curl_slist_append(slist, ZSTR_VAL(parent_span_id_str));
+		}
+		efree(trace_id_str);
+		efree(span_id_str);
+		//todo 是否释放内存正确，还需要再检查
+		curl_easy_setopt(ch->cp, CURLOPT_HTTPHEADER, slist);
+	}
+}
+
+PHP_RINIT_FUNCTION(curl)
+{
+    //在curl request之前初始化server变量，这样能够去取这个变量
+    zend_is_auto_global_str(ZEND_STRL("_SERVER"));
+    set_trace_id();
+	return SUCCESS;
+}
+
+PHP_RSHUTDOWN_FUNCTION(curl)
+{
+    //释放内存,fpm每次都会调用本函数
+    efree(request_trace_id);
+    efree(request_span_id);
+    efree(request_parent_span_id);
+    request_trace_id = request_span_id = request_parent_span_id= NULL;
+    return SUCCESS;
+}
+
 /* {{{ curl_module_entry
  */
 zend_module_entry curl_module_entry = {
@@ -509,8 +609,8 @@ zend_module_entry curl_module_entry = {
 	curl_functions,
 	PHP_MINIT(curl),
 	PHP_MSHUTDOWN(curl),
-	NULL,
-	NULL,
+    PHP_RINIT(curl),
+    PHP_RSHUTDOWN(curl),
 	PHP_MINFO(curl),
 	PHP_CURL_VERSION,
 	STANDARD_MODULE_PROPERTIES
@@ -3024,6 +3124,8 @@ void _php_curl_cleanup_handle(php_curl *ch)
 }
 /* }}} */
 
+
+
 /* {{{ proto bool curl_exec(resource ch)
    Perform a cURL session */
 PHP_FUNCTION(curl_exec)
@@ -3039,7 +3141,7 @@ PHP_FUNCTION(curl_exec)
 	if ((ch = (php_curl*)zend_fetch_resource(Z_RES_P(zid), le_curl_name, le_curl)) == NULL) {
 		RETURN_FALSE;
 	}
-
+	inject_trace_id_before_exec(ch);
 	_php_curl_verify_handlers(ch, 1);
 
 	_php_curl_cleanup_handle(ch);
